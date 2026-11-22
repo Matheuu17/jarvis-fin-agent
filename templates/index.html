@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#07090d">
+  <title>J.A.R.V.I.S. · Agente Financiero LSTM</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg-primary: #07090d;
+      --bg-elevated: #0d121a;
+      --surface-glass: rgba(16, 22, 32, 0.66);
+      --surface-line: rgba(143, 211, 255, 0.14);
+      --accent-primary: #8fd3ff;
+      --accent-listening: #ffc857;
+      --accent-processing: #ff8a3d;
+      --accent-speaking: #d9f2ff;
+      --signal-buy: #3ddc97;
+      --signal-sell: #ff5d6c;
+      --signal-hold: #9aa7b8;
+      --text-primary: #e8eef5;
+      --text-muted: #7d8a9c;
+      --live: var(--accent-primary);
+      --sans: "Bahnschrift", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+      --mono: "Cascadia Mono", "Consolas", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      display: grid;
+      grid-template-columns: minmax(260px, 340px) minmax(320px, 1fr) minmax(280px, 360px);
+      grid-template-rows: auto minmax(0, 1fr);
+      gap: 14px;
+      padding: 14px;
+      overflow: hidden;
+      color: var(--text-primary);
+      background:
+        radial-gradient(ellipse at 50% 42%, #101a28 0%, var(--bg-primary) 68%);
+      font-family: var(--sans);
+    }
+
+    button,
+    select {
+      font: inherit;
+      color: inherit;
+    }
+
+    button:focus-visible,
+    select:focus-visible,
+    canvas:focus-visible {
+      outline: 2px solid var(--live);
+      outline-offset: 3px;
+    }
+
+    .header {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-height: 48px;
+      padding: 4px 6px 12px;
+      border-bottom: 1px solid var(--surface-line);
+    }
+
+    .brand {
+      color: var(--text-primary);
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.32em;
+      white-space: nowrap;
+    }
+
+    .brand small {
+      margin-left: 10px;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 400;
+      letter-spacing: 0.12em;
+    }
+
+    .header-spacer {
+      flex: 1;
+    }
+
+    .control {
+      min-height: 36px;
+      border: 1px solid var(--surface-line);
+      background: var(--surface-glass);
+      padding: 7px 12px;
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      transition: border-color 180ms ease, color 180ms ease;
+    }
+
+    .control:hover {
+      border-color: var(--live);
+    }
+
+    select.control {
+      max-width: 230px;
+      cursor: pointer;
+    }
+
+    select.control option {
+      background: var(--bg-elevated);
+    }
+
+    .wake-control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .wake-control i {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+    }
+
+    .wake-control.on {
+      border-color: var(--accent-listening);
+      color: var(--accent-listening);
+    }
+
+    .wake-control.on i {
+      background: var(--accent-listening);
+      box-shadow: 0 0 8px var(--accent-listening);
+    }
+
+    .control.muted {
+      border-color: var(--signal-sell);
+      color: var(--signal-sell);
+    }
+
+    .status-badge {
+      min-width: 190px;
+      border: 1px solid var(--live);
+      padding: 7px 14px;
+      color: var(--live);
+      font-size: 0.78rem;
+      letter-spacing: 0.14em;
+      text-align: center;
+      transition: color 300ms ease, border-color 300ms ease;
+    }
+
+    .panel {
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      border: 1px solid var(--surface-line);
+      background: var(--surface-glass);
+      backdrop-filter: blur(8px);
+      padding: 16px;
+    }
+
+    .panel h2 {
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--surface-line);
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      letter-spacing: 0.18em;
+    }
+
+    .stack,
+    .history {
+      min-height: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+      padding-right: 4px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--surface-line) transparent;
+    }
+
+    .empty {
+      color: var(--text-muted);
+      font-size: 0.86rem;
+      line-height: 1.5;
+    }
+
+    .asset-card {
+      border: 1px solid var(--surface-line);
+      border-left: 3px solid var(--signal-hold);
+      background: rgba(255, 255, 255, 0.025);
+      padding: 12px;
+    }
+
+    .asset-card[data-signal="buy"] {
+      border-left-color: var(--signal-buy);
+    }
+
+    .asset-card[data-signal="sell"] {
+      border-left-color: var(--signal-sell);
+    }
+
+    .asset-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+
+    .asset-name {
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+
+    .signal {
+      border: 1px solid currentColor;
+      padding: 3px 8px;
+      color: var(--signal-hold);
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+    }
+
+    .asset-card[data-signal="buy"] .signal {
+      color: var(--signal-buy);
+    }
+
+    .asset-card[data-signal="sell"] .signal {
+      color: var(--signal-sell);
+    }
+
+    .asset-card-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .metric-label {
+      color: var(--text-muted);
+      font-size: 0.66rem;
+      letter-spacing: 0.06em;
+    }
+
+    .metric-value {
+      margin-top: 3px;
+      font-family: var(--mono);
+      font-size: 0.92rem;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric-value.up {
+      color: var(--signal-buy);
+    }
+
+    .metric-value.down {
+      color: var(--signal-sell);
+    }
+
+    .core {
+      min-height: 0;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #core {
+      width: min(400px, 42vh, 100%);
+      aspect-ratio: 1;
+      cursor: pointer;
+    }
+
+    .subtitle {
+      max-width: 560px;
+      min-height: 74px;
+      margin-top: 4px;
+      color: var(--text-primary);
+      font-size: 1.05rem;
+      line-height: 1.5;
+      text-align: center;
+    }
+
+    .subtitle.error {
+      color: var(--signal-sell);
+    }
+
+    .tags {
+      min-height: 22px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .tag {
+      border: 1px solid var(--surface-line);
+      padding: 2px 8px;
+      color: var(--live);
+      font-family: var(--mono);
+      font-size: 0.68rem;
+    }
+
+    .message {
+      max-width: 92%;
+      padding: 9px 11px;
+      font-size: 0.88rem;
+      line-height: 1.45;
+    }
+
+    .message-who {
+      margin-bottom: 4px;
+      color: var(--text-muted);
+      font-size: 0.64rem;
+      letter-spacing: 0.14em;
+    }
+
+    .message.user {
+      align-self: flex-end;
+      border-right: 2px solid var(--text-muted);
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .message.jarvis {
+      align-self: flex-start;
+      border-left: 2px solid var(--accent-primary);
+      background: rgba(143, 211, 255, 0.07);
+    }
+
+    .message.jarvis.error {
+      border-left-color: var(--signal-sell);
+    }
+
+    .message.live {
+      align-self: flex-start;
+      border: 1px dashed var(--surface-line);
+      background: none;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+    }
+
+    .message .tags {
+      justify-content: flex-start;
+      margin-top: 6px;
+    }
+
+    @media (max-width: 1000px) {
+      body {
+        height: auto;
+        min-height: 100%;
+        grid-template-columns: 1fr;
+        grid-template-rows: auto minmax(320px, 55vh) auto auto;
+        overflow-y: auto;
+      }
+
+      .header {
+        flex-wrap: wrap;
+      }
+
+      .header-spacer {
+        display: none;
+      }
+
+      .status-badge {
+        flex: 1;
+      }
+
+      .panel {
+        max-height: 340px;
+      }
+
+      #core {
+        width: min(360px, 50vh, 82vw);
+      }
+    }
+
+    @media (max-width: 620px) {
+      body {
+        gap: 8px;
+        padding: 8px;
+      }
+
+      .brand {
+        width: 100%;
+      }
+
+      .brand small {
+        display: none;
+      }
+
+      .control,
+      .status-badge {
+        font-size: 0.68rem;
+      }
+
+      select.control {
+        max-width: 150px;
+      }
+
+      .status-badge {
+        min-width: 150px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      * {
+        transition: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <div class="brand">J.A.R.V.I.S.<small>FIN-AGENT</small></div>
+    <div class="header-spacer"></div>
+    <button id="wakeButton" class="control wake-control on" type="button"
+      title="Escucha pasiva por palabra clave" aria-pressed="true">
+      <i aria-hidden="true"></i>
+      <span id="wakeText">WAKE WORD: ON</span>
+    </button>
+    <select id="voiceSelect" class="control" title="Voz de Jarvis" aria-label="Voz de Jarvis"></select>
+    <button id="muteButton" class="control" type="button"
+      title="Silenciar la voz de Jarvis" aria-pressed="false">VOZ: ON</button>
+    <div id="statusBadge" class="status-badge" role="status" aria-live="polite">CENTINELA ACTIVO</div>
+  </header>
+
+  <aside class="panel" aria-label="Telemetría de activos">
+    <h2>TELEMETRÍA MULTI-ACTIVO</h2>
+    <div id="assetStack" class="stack">
+      <p class="empty">Aún no hay lecturas. Di el nombre de un activo y aquí aparecerán el último cierre, la proyección t+1 y la señal del modelo.</p>
+    </div>
+  </aside>
+
+  <main class="core">
+    <canvas id="core" role="button" tabindex="0" title="Pulsa para hablar"
+      aria-label="Activar el reconocimiento de voz"></canvas>
+    <div id="subtitle" class="subtitle" aria-live="polite">Di “Jarvis” seguido de tu consulta.</div>
+    <div id="tags" class="tags" aria-label="Activos consultados"></div>
+  </main>
+
+  <aside class="panel" aria-label="Historial de conversación">
+    <h2>HISTORIAL</h2>
+    <div id="history" class="history"></div>
+  </aside>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const $ = (id) => document.getElementById(id);
+      const createElement = (tag, className, text) => {
+        const element = document.createElement(tag);
+        if (className) element.className = className;
+        if (text !== undefined) element.textContent = text;
+        return element;
+      };
+
+      const styles = getComputedStyle(document.documentElement);
+      const css = (name) => styles.getPropertyValue(name).trim();
+      const cleanText = (text) =>
+        String(text ?? "").replace(/\^/g, "").replace(/=X/g, "").trim();
+      const spokenText = (text) =>
+        cleanText(text)
+          .replace(/[*_`#>]/g, "")
+          .replace(/%/g, " por ciento")
+          .replace(/\s+/g, " ")
+          .trim();
+
+      const STATES = {
+        off: { label: "EN ESPERA", color: "--accent-primary", speed: 0.006 },
+        standby: { label: "CENTINELA ACTIVO", color: "--accent-primary", speed: 0.010 },
+        listening: { label: "ESCUCHANDO COMANDO", color: "--accent-listening", speed: 0.030 },
+        processing: { label: "INFERENCIA LSTM", color: "--accent-processing", speed: 0.070 },
+        speaking: { label: "RESPONDIENDO", color: "--accent-speaking", speed: 0.040 }
+      };
+
+      const elements = {
+        wakeButton: $("wakeButton"),
+        wakeText: $("wakeText"),
+        voiceSelect: $("voiceSelect"),
+        muteButton: $("muteButton"),
+        statusBadge: $("statusBadge"),
+        assetStack: $("assetStack"),
+        subtitle: $("subtitle"),
+        tags: $("tags"),
+        history: $("history"),
+        canvas: $("core")
+      };
+
+      let state = "standby";
+      let liveColor = css("--accent-primary");
+
+      function setState(nextState) {
+        state = nextState;
+        liveColor = css(STATES[nextState].color);
+        elements.statusBadge.textContent = STATES[nextState].label;
+        document.documentElement.style.setProperty("--live", liveColor);
+      }
+
+      function notify(message, error = false) {
+        elements.subtitle.textContent = message;
+        elements.subtitle.classList.toggle("error", error);
+      }
+
+      let audioContext = null;
+      let analyser = null;
+      let meterBuffer = null;
+      let meterStarted = false;
+
+      async function initializeMeter() {
+        if (meterStarted) return;
+        meterStarted = true;
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            audio: { echoCancellation: true, noiseSuppression: true }
+          });
+          audioContext ??= new AudioContext();
+          analyser = audioContext.createAnalyser();
+          analyser.fftSize = 512;
+          audioContext.createMediaStreamSource(stream).connect(analyser);
+          meterBuffer = new Uint8Array(analyser.fftSize);
+        } catch {
+          analyser = null;
+        }
+      }
+
+      function microphoneLevel() {
+        if (!analyser) return 0;
+        analyser.getByteTimeDomainData(meterBuffer);
+        let sum = 0;
+        for (const value of meterBuffer) {
+          const delta = (value - 128) / 128;
+          sum += delta * delta;
+        }
+        return Math.min(1, Math.sqrt(sum / meterBuffer.length) * 5);
+      }
+
+      function beep() {
+        try {
+          audioContext ??= new AudioContext();
+          if (audioContext.state === "suspended") void audioContext.resume();
+          const time = audioContext.currentTime;
+          [[880, 0], [1318, 0.09]].forEach(([frequency, delay]) => {
+            const oscillator = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            oscillator.type = "sine";
+            oscillator.frequency.value = frequency;
+            gain.gain.setValueAtTime(0, time + delay);
+            gain.gain.linearRampToValueAtTime(0.18, time + delay + 0.01);
+            gain.gain.exponentialRampToValueAtTime(0.001, time + delay + 0.16);
+            oscillator.connect(gain).connect(audioContext.destination);
+            oscillator.start(time + delay);
+            oscillator.stop(time + delay + 0.18);
+          });
+        } catch {
+          // El pitido es opcional si el navegador bloquea el audio.
+        }
+      }
+
+      const canvas = elements.canvas;
+      const context = canvas.getContext("2d");
+      const CANVAS_SIZE = 400;
+      let level = 0;
+      let spike = 0;
+      let flash = 0;
+      let angle = 0;
+
+      function configureCanvas() {
+        const pixelRatio = window.devicePixelRatio || 1;
+        canvas.width = CANVAS_SIZE * pixelRatio;
+        canvas.height = CANVAS_SIZE * pixelRatio;
+        context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      }
+
+      function rgba(hex, alpha) {
+        const value = parseInt(hex.replace("#", ""), 16);
+        return `rgba(${value >> 16}, ${(value >> 8) & 255}, ${value & 255}, ${alpha})`;
+      }
+
+      function draw(timestamp) {
+        const center = CANVAS_SIZE / 2;
+        let target = 0.04 + 0.02 * Math.sin(timestamp / 700);
+
+        if (state === "listening") {
+          target = Math.max(microphoneLevel(), 0.2 + 0.08 * Math.sin(timestamp / 180));
+        } else if (state === "speaking") {
+          spike *= 0.92;
+          target = 0.22 + spike * 0.6 + 0.08 * Math.sin(timestamp / 90);
+        } else if (state === "processing") {
+          target = 0.32 + 0.14 * Math.sin(timestamp / 120);
+        } else if (state === "standby") {
+          target = Math.max(target, microphoneLevel() * 0.5);
+        }
+
+        level += (target - level) * 0.18;
+        angle += STATES[state].speed;
+        context.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+        const glow = context.createRadialGradient(center, center, 10, center, center, 170);
+        glow.addColorStop(0, rgba(liveColor, 0.22 + level * 0.35));
+        glow.addColorStop(1, rgba(liveColor, 0));
+        context.fillStyle = glow;
+        context.beginPath();
+        context.arc(center, center, 170, 0, Math.PI * 2);
+        context.fill();
+
+        context.lineWidth = 2;
+        context.lineCap = "round";
+        context.strokeStyle = liveColor;
+        for (let index = 0; index < 72; index++) {
+          const radians = (index / 72) * Math.PI * 2 + angle * 0.3;
+          const wave = 0.5 + 0.5 * Math.sin(index * 0.9 + timestamp / 260 * (1 + level * 3));
+          const length = 4 + level * 46 * wave + (index % 6 === 0 ? 6 : 0);
+          context.globalAlpha = 0.45 + 0.45 * wave;
+          context.beginPath();
+          context.moveTo(center + Math.cos(radians) * 82, center + Math.sin(radians) * 82);
+          context.lineTo(
+            center + Math.cos(radians) * (82 + length),
+            center + Math.sin(radians) * (82 + length)
+          );
+          context.stroke();
+        }
+        context.globalAlpha = 1;
+
+        context.save();
+        context.translate(center, center);
+        context.rotate(angle);
+        context.lineWidth = 2;
+        context.setLineDash([30, 12, 6, 12]);
+        context.beginPath();
+        context.arc(0, 0, 158, 0, Math.PI * 2);
+        context.stroke();
+        context.restore();
+
+        context.save();
+        context.translate(center, center);
+        context.rotate(-angle * 1.4);
+        context.globalAlpha = 0.6;
+        context.lineWidth = 1.5;
+        context.setLineDash([2, 9]);
+        context.beginPath();
+        context.arc(0, 0, 138, 0, Math.PI * 2);
+        context.stroke();
+        context.restore();
+
+        context.setLineDash([]);
+        context.globalAlpha = 1;
+        const radius = 52 + level * 16;
+        const core = context.createRadialGradient(center, center, 2, center, center, radius);
+        core.addColorStop(0, rgba(liveColor, 0.85));
+        core.addColorStop(1, rgba(liveColor, 0.12));
+        context.fillStyle = core;
+        context.beginPath();
+        context.arc(center, center, radius, 0, Math.PI * 2);
+        context.fill();
+        context.strokeStyle = css("--text-primary");
+        context.lineWidth = 1.5;
+        context.stroke();
+
+        if (flash > 0) {
+          context.strokeStyle = rgba(css("--accent-listening"), flash);
+          context.lineWidth = 3;
+          context.beginPath();
+          context.arc(center, center, 60 + (1 - flash) * 140, 0, Math.PI * 2);
+          context.stroke();
+          flash -= 0.025;
+        }
+
+        requestAnimationFrame(draw);
+      }
+
+      configureCanvas();
+      window.addEventListener("resize", configureCanvas, { passive: true });
+      requestAnimationFrame(draw);
+
+      function normalizeAssets(data) {
+        let marketData = data.market_data;
+        if (!marketData) return [];
+
+        if (marketData.activos && typeof marketData.activos === "object") {
+          marketData = marketData.activos;
+        }
+
+        let assets;
+        if (Array.isArray(marketData)) {
+          assets = marketData;
+        } else if (marketData.activo !== undefined || marketData.ultimo_cierre !== undefined) {
+          assets = [marketData];
+        } else {
+          assets = Object.entries(marketData)
+            .filter(([, value]) => value && typeof value === "object")
+            .map(([name, value]) => ({ activo: name, ...value }));
+        }
+
+        const names = data.activos_consultados || [];
+        return assets.map((asset, index) => ({
+          name: cleanText(asset.activo || asset.nombre || names[index] || "ACTIVO"),
+          decimals: Number.isInteger(asset.decimales) ? asset.decimales : 2,
+          close: asset.ultimo_cierre,
+          projection: asset.proyeccion,
+          percentage: asset.variacion_pct,
+          signal: String(asset.senal || "MANTENER").toUpperCase()
+        }));
+      }
+
+      function formatMetric(value, decimals) {
+        if (value === undefined || value === null || Number.isNaN(Number(value))) return "—";
+        return Number(value).toLocaleString("en-US", {
+          minimumFractionDigits: decimals,
+          maximumFractionDigits: decimals
+        });
+      }
+
+      function renderAssetCards(assets) {
+        if (!assets.length) return;
+        elements.assetStack.querySelector(".empty")?.remove();
+
+        assets.forEach((asset) => {
+          elements.assetStack.querySelector(`[data-name="${CSS.escape(asset.name)}"]`)?.remove();
+
+          const signalKey =
+            asset.signal === "COMPRAR" ? "buy" :
+            asset.signal === "VENDER" ? "sell" : "hold";
+
+          const card = createElement("article", "asset-card");
+          card.dataset.name = asset.name;
+          card.dataset.signal = signalKey;
+
+          const header = createElement("div", "asset-card-header");
+          header.append(
+            createElement("div", "asset-name", asset.name),
+            createElement("div", "signal", asset.signal)
+          );
+
+          const grid = createElement("div", "asset-card-grid");
+          const percentage = Number(asset.percentage);
+          const hasPercentage = asset.percentage !== undefined &&
+            asset.percentage !== null &&
+            !Number.isNaN(percentage);
+
+          [
+            ["Último cierre", formatMetric(asset.close, asset.decimals)],
+            ["Proyección t+1", formatMetric(asset.projection, asset.decimals)],
+            [
+              "Variación",
+              hasPercentage ? `${percentage >= 0 ? "▲ +" : "▼ "}${percentage.toFixed(2)}%` : "—",
+              hasPercentage ? (percentage >= 0 ? "up" : "down") : ""
+            ]
+          ].forEach(([label, value, valueClass = ""]) => {
+            const metric = createElement("div");
+            const valueElement = createElement("div", `metric-value ${valueClass}`.trim(), value);
+            metric.append(createElement("div", "metric-label", label), valueElement);
+            grid.append(metric);
+          });
+
+          card.append(header, grid);
+          elements.assetStack.prepend(card);
+        });
+
+        while (elements.assetStack.children.length > 8) {
+          elements.assetStack.lastElementChild?.remove();
+        }
+      }
+
+      function setTags(names) {
+        elements.tags.replaceChildren();
+        [...new Set(names.map(cleanText).filter(Boolean))].forEach((name) => {
+          elements.tags.append(createElement("span", "tag", `LSTM·${name}`));
+        });
+      }
+
+      function addMessage(role, text, names = [], error = false) {
+        const message = createElement("div", `message ${role}${error ? " error" : ""}`);
+        message.append(
+          createElement("div", "message-who", role === "user" ? "USUARIO" : "J.A.R.V.I.S."),
+          createElement("div", "", text)
+        );
+        if (names.length) {
+          const tags = createElement("div", "tags");
+          names.map(cleanText).filter(Boolean).forEach((name) => {
+            tags.append(createElement("span", "tag", `LSTM·${name}`));
+          });
+          message.append(tags);
+        }
+        elements.history.append(message);
+        elements.history.scrollTop = elements.history.scrollHeight;
+      }
+
+      let pendingMessage = null;
+      let liveHistoryMessage = null;
+
+      function commitPendingMessage() {
+        liveHistoryMessage?.remove();
+        liveHistoryMessage = null;
+        if (pendingMessage) {
+          addMessage("jarvis", pendingMessage.text, pendingMessage.names, pendingMessage.error);
+          pendingMessage = null;
+        }
+      }
+
+      function showReply(text, names, error = false) {
+        pendingMessage = { text, names, error };
+        notify(`“${text}”`, error);
+        setTags(names);
+        liveHistoryMessage = createElement("div", "message live", "Respuesta actual en el núcleo central");
+        elements.history.append(liveHistoryMessage);
+        elements.history.scrollTop = elements.history.scrollHeight;
+      }
+
+      let voices = [];
+      let muted = false;
+      let turn = 0;
+
+      function loadVoices() {
+        if (!("speechSynthesis" in window)) return;
+        const male = /jorge|diego|pablo|carlos|raul|raúl|alvaro|álvaro|enrique|miguel|jose|juan|andres|andrés|male|hombre/i;
+        const score = (voice) =>
+          (/neural|natural|online/i.test(voice.name) ? 4 : 0) +
+          (male.test(voice.name) ? 3 : 0) +
+          (/es-(PE|MX|US)/i.test(voice.lang) ? 1 : 0);
+        const previous = elements.voiceSelect.value;
+
+        voices = speechSynthesis
+          .getVoices()
+          .filter((voice) => /^es/i.test(voice.lang))
+          .sort((first, second) => score(second) - score(first));
+
+        elements.voiceSelect.replaceChildren();
+        if (!voices.length) {
+          elements.voiceSelect.append(new Option("Voz por defecto", ""));
+          return;
+        }
+        voices.forEach((voice) => {
+          elements.voiceSelect.append(new Option(`${voice.name} (${voice.lang})`, voice.voiceURI));
+        });
+        if (voices.some((voice) => voice.voiceURI === previous)) {
+          elements.voiceSelect.value = previous;
+        }
+      }
+
+      if ("speechSynthesis" in window) {
+        loadVoices();
+        speechSynthesis.addEventListener("voiceschanged", loadVoices);
+      }
+
+      function speak(text, done) {
+        if (muted || !("speechSynthesis" in window)) {
+          done();
+          return;
+        }
+        speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(spokenText(text));
+        const selectedVoice = voices.find(
+          (voice) => voice.voiceURI === elements.voiceSelect.value
+        );
+        if (selectedVoice) {
+          utterance.voice = selectedVoice;
+          utterance.lang = selectedVoice.lang;
+        } else {
+          utterance.lang = "es-ES";
+        }
+        utterance.pitch = 0.85;
+        utterance.rate = 1;
+        let finished = false;
+        const finish = () => {
+          if (finished) return;
+          finished = true;
+          done();
+        };
+        utterance.onstart = () => setState("speaking");
+        utterance.onboundary = () => { spike = 1; };
+        utterance.onend = finish;
+        utterance.onerror = finish;
+        speechSynthesis.speak(utterance);
+      }
+
+      let busy = false;
+
+      async function submit(text) {
+        text = cleanText(text);
+        if (!text || busy) return;
+        if (state === "speaking" && "speechSynthesis" in window) {
+          speechSynthesis.cancel();
+        }
+
+        const currentTurn = ++turn;
+        busy = true;
+        paused = true;
+        mode = "sentinel";
+        clearTimeout(commandTimer);
+        stopRecognition();
+        commitPendingMessage();
+        addMessage("user", text);
+        setTags([]);
+        notify("Consultando modelos LSTM…");
+        setState("processing");
+
+        const finish = () => {
+          if (currentTurn === turn) finishTurn();
+        };
+
+        try {
+          const response = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: text })
+          });
+          const data = await response.json().catch(() => ({}));
+          const reply = cleanText(data.reply || "El servidor no devolvió una respuesta.");
+          if (!response.ok) {
+            showReply(reply, [], true);
+            finish();
+            return;
+          }
+
+          const assets = normalizeAssets(data);
+          if (assets.length) renderAssetCards(assets);
+          const names = Array.isArray(data.activos_consultados)
+            ? data.activos_consultados
+            : assets.map((asset) => asset.name);
+          showReply(reply, names);
+          speak(reply, finish);
+        } catch (error) {
+          showReply(`Sin conexión con el servidor: ${error.message}`, [], true);
+          finish();
+        }
+      }
+
+      function finishTurn() {
+        busy = false;
+        paused = false;
+        manual = false;
+        mode = "sentinel";
+        setState(wakeOn ? "standby" : "off");
+        startRecognition();
+      }
+
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const WAKE_WORD = /\b(?:j|y|h|g|ll|ch)arv[iy]s\b|\b(?:j|y)arbis\b/i;
+      let recognition = null;
+      let recognitionRunning = false;
+      let wakeOn = true;
+      let manual = false;
+      let paused = false;
+      let mode = "sentinel";
+      let wakeIndex = -1;
+      let handledResults = {};
+      let commandTimer = null;
+
+      const shouldRun =
+        () => Boolean(SpeechRecognition) && !paused && (wakeOn || manual);
+
+      function startRecognition() {
+        if (recognition && !recognitionRunning && shouldRun()) {
+          try {
+            recognition.start();
+          } catch {
+            // El reconocimiento ya puede estar iniciándose.
+          }
+        }
+      }
+
+      function stopRecognition() {
+        if (recognition && recognitionRunning) {
+          try {
+            recognition.stop();
+          } catch {
+            // El reconocimiento ya puede haberse detenido.
+          }
+        }
+      }
+
+      function enterCommand(fromWake = false, resultIndex = -1) {
+        mode = "command";
+        wakeIndex = fromWake ? resultIndex : 0;
+        flash = 1;
+        beep();
+        setState("listening");
+        notify("Te escucho…");
+        armCommandTimer();
+      }
+
+      function armCommandTimer() {
+        clearTimeout(commandTimer);
+        commandTimer = setTimeout(exitCommand, 9000);
+      }
+
+      function exitCommand() {
+        clearTimeout(commandTimer);
+        mode = "sentinel";
+        manual = false;
+        if (!busy) {
+          setState(wakeOn ? "standby" : "off");
+          notify("Di “Jarvis” seguido de tu consulta.");
+        }
+        if (!wakeOn) stopRecognition();
+      }
+
+      function updateWakeUI() {
+        elements.wakeButton.classList.toggle("on", wakeOn);
+        elements.wakeButton.setAttribute("aria-pressed", String(wakeOn));
+        elements.wakeText.textContent = `WAKE WORD: ${wakeOn ? "ON" : "OFF"}`;
+      }
+
+      if (SpeechRecognition) {
+        recognition = new SpeechRecognition();
+        recognition.lang = "es-PE";
+        recognition.continuous = true;
+        recognition.interimResults = true;
+
+        recognition.onstart = () => {
+          recognitionRunning = true;
+          handledResults = {};
+          void initializeMeter();
+        };
+        recognition.onend = () => {
+          recognitionRunning = false;
+          if (shouldRun()) setTimeout(startRecognition, 250);
+        };
+        recognition.onerror = (event) => {
+          if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+            wakeOn = false;
+            manual = false;
+            updateWakeUI();
+            setState("off");
+            notify("Permiso de micrófono denegado. Actívalo en el navegador.", true);
+          }
+        };
+        recognition.onresult = (event) => {
+          if (busy || paused) return;
+          for (let index = event.resultIndex; index < event.results.length; index++) {
+            const result = event.results[index];
+            const raw = result[0].transcript;
+            const normalized = raw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const match = normalized.match(WAKE_WORD);
+
+            if (mode === "sentinel" && !handledResults[index] && match) {
+              handledResults[index] = true;
+              enterCommand(true, index);
+            }
+            if (mode === "command" && result.isFinal && index >= wakeIndex) {
+              let command = match
+                ? raw.slice(match.index + match[0].length)
+                : raw;
+              command = command.replace(/^[\s,.:;¡!¿?-]+/, "").trim();
+              if (command.length > 1) {
+                void submit(command);
+                return;
+              }
+            }
+          }
+        };
+      }
+
+      elements.wakeButton.addEventListener("click", () => {
+        if (!SpeechRecognition) {
+          notify("Tu navegador no admite reconocimiento de voz. Usa Chrome o Edge.", true);
+          return;
+        }
+        wakeOn = !wakeOn;
+        updateWakeUI();
+        if (wakeOn) {
+          if (!busy && mode !== "command") setState("standby");
+          startRecognition();
+        } else {
+          if (!busy && mode !== "command") setState("off");
+          if (!manual) stopRecognition();
+        }
+      });
+
+      function activateByCanvas() {
+        if (!SpeechRecognition) {
+          notify("Tu navegador no admite reconocimiento de voz. Usa Chrome o Edge.", true);
+          return;
+        }
+        if (state === "processing") return;
+        if (state === "speaking" && "speechSynthesis" in window) {
+          speechSynthesis.cancel();
+          turn++;
+          busy = false;
+          paused = false;
+        }
+        if (mode === "command") {
+          exitCommand();
+          return;
+        }
+        manual = true;
+        audioContext ??= new AudioContext();
+        enterCommand();
+        startRecognition();
+      }
+
+      canvas.addEventListener("click", activateByCanvas);
+      canvas.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          activateByCanvas();
+        }
+      });
+
+      elements.muteButton.addEventListener("click", () => {
+        muted = !muted;
+        elements.muteButton.textContent = muted ? "VOZ: OFF" : "VOZ: ON";
+        elements.muteButton.setAttribute("aria-pressed", String(muted));
+        elements.muteButton.classList.toggle("muted", muted);
+        if (muted && "speechSynthesis" in window) speechSynthesis.cancel();
+      });
+
+      if (SpeechRecognition) {
+        setState("standby");
+        startRecognition();
+      } else {
+        wakeOn = false;
+        updateWakeUI();
+        setState("off");
+        notify("Reconocimiento de voz no disponible en este navegador. Usa Chrome o Edge.", true);
+      }
+    })();
+  </script>
+</body>
+</html>

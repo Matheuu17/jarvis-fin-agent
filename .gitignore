@@ -1,0 +1,22 @@
+# Variables de entorno (NUNCA subir tus API Keys)
+.env
+.env.local
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Caché y compilados de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Sistema operativo y editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
